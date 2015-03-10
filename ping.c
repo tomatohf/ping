@@ -3,6 +3,7 @@
 #include <string.h>
 #include <netdb.h>
 #include <sys/socket.h>
+#include <arpa/inet.h>
 
 int get_addrinfo_v4(const char *host, struct addrinfo **result) {
     struct addrinfo hints;
@@ -28,6 +29,13 @@ int main(int argc, char **argv) {
         printf("Error: %s\n", gai_strerror(status));
         exit(EXIT_FAILURE);
     }
+
+    char ip[INET_ADDRSTRLEN];
+    inet_ntop(
+        host->ai_family,
+        &(((struct sockaddr_in *)host->ai_addr)->sin_addr),
+        ip, sizeof(ip)
+    );
 
     return EXIT_SUCCESS;
 }
