@@ -37,5 +37,11 @@ int main(int argc, char **argv) {
         ip, sizeof(ip)
     );
 
+    int sock = socket(host->ai_family, SOCK_RAW, IPPROTO_ICMP);
+    if (sock < 0) {
+        perror("socket");
+        exit(EXIT_FAILURE);
+    }
+
     return EXIT_SUCCESS;
 }
