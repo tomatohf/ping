@@ -81,6 +81,7 @@ void alarm_handler(int signal_number) {
     icmp_packet->icmp_id = pid;
     icmp_packet->icmp_seq = seq++;
     gettimeofday((struct timeval *)icmp_packet->icmp_data, NULL);
+    icmp_packet->icmp_cksum = 0;
     icmp_packet->icmp_cksum = checksum((u_short *)icmp_packet, icmp_packet_length);
 
     sendto(sock, send_buffer, icmp_packet_length, 0, host->ai_addr, host->ai_addrlen);
