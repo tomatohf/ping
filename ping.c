@@ -118,7 +118,6 @@ int main(int argc, char **argv) {
     char send_ip[INET_ADDRSTRLEN];
     get_sockaddr_text(host->ai_addr, send_ip, sizeof(send_ip));
 
-    struct ip ip_packet;
     printf(
         "PING %s (%s): %d data bytes\n",
         host->ai_canonname,
@@ -128,12 +127,13 @@ int main(int argc, char **argv) {
 
     alarm_handler(SIGALRM);
 
+    char receive_buffer[BUFFER_SIZE];
     struct sockaddr receive_address;
     char control_buffer[BUFFER_SIZE];
 
     struct iovec iov;
-    iov.iov_base = &ip_packet;
-    iov.iov_len = sizeof(ip_packet);
+    iov.iov_base = receive_buffer;
+    iov.iov_len = sizeof(receive_buffer);
 
     struct msghdr msg;
     msg.msg_name = &receive_address;
@@ -149,26 +149,29 @@ int main(int argc, char **argv) {
     for ( ; ; ) {
         ssize_t n = recvmsg(sock, &msg, 0);
 
-        if (n > 0 && ip_packet.ip_p == IPPROTO_ICMP) {
-            int ip_header_length = ip_packet.ip_hl << 2;
-            int icmp_packet_length = n - ip_header_length;
-            if (icmp_packet_length >= 16) {
-                struct icmp *icmp_packet = (struct icmp *)(&ip_packet + ip_header_length);
-                if (
-                    icmp_packet->icmp_type == ICMP_ECHOREPLY &&
-                    icmp_packet->icmp_id == (getpid() & 0xffff)
-                ) {
-                    gettimeofday(&receive_time, NULL);
-                    struct timeval *send_time = (struct timeval *)icmp_packet->icmp_data;
+        if (n > 0) {
+            struct ip *ip_packet = (struct ip *)receive_buffer;
+            if (ip_packet->ip_p == IPPROTO_ICMP) {
+                int ip_header_length = ip_packet->ip_hl << 2;
+                int icmp_packet_length = n - ip_header_length;
+                if (icmp_packet_length >= 16) {
+                    struct icmp *icmp_packet = (struct icmp *)(receive_buffer + ip_header_length);
+                    if (
+                        icmp_packet->icmp_type == ICMP_ECHOREPLY &&
+                        icmp_packet->icmp_id == pid
+                    ) {
+                        gettimeofday(&receive_time, NULL);
+                        struct timeval *send_time = (struct timeval *)icmp_packet->icmp_data;
 
-                    printf(
-                        "%d bytes from %s: icmp_seq=%u, ttl=%d, time=%.3f ms\n",
-                        icmp_packet_length,
-                        get_sockaddr_text(&receive_address, receive_ip, sizeof(receive_ip)),
-                        icmp_packet->icmp_seq,
-                        ip_packet.ip_ttl,
-                        timeval_to_ms(&receive_time) - timeval_to_ms(send_time)
-                    );
+                        printf(
+                            "%d bytes from %s: icmp_seq=%u ttl=%d time=%.3f ms\n",
+                            icmp_packet_length,
+                            get_sockaddr_text(&receive_address, receive_ip, sizeof(receive_ip)),
+                            icmp_packet->icmp_seq,
+                            ip_packet->ip_ttl,
+                            timeval_to_ms(&receive_time) - timeval_to_ms(send_time)
+                        );
+                    }
                 }
             }
         }
