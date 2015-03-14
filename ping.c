@@ -109,6 +109,8 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
+    setuid(getuid());
+
     struct sigaction action;
     action.sa_handler = alarm_handler;
     if (sigaction(SIGALRM, &action, NULL) < 0) {
