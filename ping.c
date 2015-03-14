@@ -3,6 +3,7 @@
 #include <string.h>
 #include <netdb.h>
 #include <unistd.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <arpa/inet.h>
@@ -10,6 +11,14 @@
 #include <netinet/ip_icmp.h>
 
 #define BUFFER_SIZE 1024
+
+const int icmp_header_length = 8;
+const int data_length = 64 - icmp_header_length;
+
+int seq = 0;
+pid_t pid;
+int sock;
+struct addrinfo *host;
 
 int get_addrinfo_v4(const char *host, struct addrinfo **result) {
     struct addrinfo hints;
@@ -37,24 +46,72 @@ double timeval_to_ms(const struct timeval *time) {
     return (time->tv_sec * 1000.0) + (time->tv_usec / 1000.0);
 }
 
-int main(int argc, char **argv) {
-    int status;
+u_short checksum(u_short *data, int length) {
+    register int data_left = length;
+    register u_short *p = data;
+    register int sum = 0;
+    u_short answer = 0;
 
+    while (data_left > 1) {
+        sum += *p;
+        p++;
+        data_left -= 2;
+    }
+
+    if (data_left == 1) {
+        *(u_char *)(&answer) = *(u_char *)p;
+        sum += answer;
+    }
+
+    sum = (sum >> 16) + (sum & 0xffff);
+    sum += (sum >> 16);
+    answer = ~sum;
+    return answer;
+}
+
+void alarm_handler(int signal_number) {
+    int icmp_packet_length = data_length + icmp_header_length;
+
+    char send_buffer[BUFFER_SIZE];
+    memset(send_buffer + icmp_header_length, 0, data_length);
+
+    struct icmp *icmp_packet = (struct icmp *)send_buffer;
+    icmp_packet->icmp_type = ICMP_ECHO;
+    icmp_packet->icmp_code = 0;
+    icmp_packet->icmp_id = pid;
+    icmp_packet->icmp_seq = seq++;
+    gettimeofday((struct timeval *)icmp_packet->icmp_data, NULL);
+    icmp_packet->icmp_cksum = checksum((u_short *)icmp_packet, icmp_packet_length);
+
+    sendto(sock, send_buffer, icmp_packet_length, 0, host->ai_addr, host->ai_addrlen);
+
+    alarm(1);
+}
+
+int main(int argc, char **argv) {
     if (argc != 2) {
         printf("usage: %s host\n", argv[0]);
         exit(EXIT_FAILURE);
     }
 
-    struct addrinfo *host;
-    status = get_addrinfo_v4(argv[1], &host);
+    pid = getpid() & 0xffff;
+
+    int status = get_addrinfo_v4(argv[1], &host);
     if (status != 0) {
-        printf("Error: %s\n", gai_strerror(status));
+        printf("error: %s\n", gai_strerror(status));
         exit(EXIT_FAILURE);
     }
 
-    int sock = socket(host->ai_family, SOCK_RAW, IPPROTO_ICMP);
+    sock = socket(host->ai_family, SOCK_RAW, IPPROTO_ICMP);
     if (sock < 0) {
         perror("socket");
+        exit(EXIT_FAILURE);
+    }
+
+    struct sigaction action;
+    action.sa_handler = alarm_handler;
+    if (sigaction(SIGALRM, &action, NULL) < 0) {
+        perror("signal");
         exit(EXIT_FAILURE);
     }
 
@@ -62,6 +119,15 @@ int main(int argc, char **argv) {
     get_sockaddr_text(host->ai_addr, send_ip, sizeof(send_ip));
 
     struct ip ip_packet;
+    printf(
+        "PING %s (%s): %d data bytes\n",
+        host->ai_canonname,
+        send_ip,
+        data_length
+    );
+
+    alarm_handler(SIGALRM);
+
     struct sockaddr receive_address;
     char control_buffer[BUFFER_SIZE];
 
