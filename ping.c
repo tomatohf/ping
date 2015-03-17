@@ -11,9 +11,8 @@
 #include <netinet/ip_icmp.h>
 
 #define BUFFER_SIZE 1024
-
-const int icmp_header_length = 8;
-const int data_length = 64 - icmp_header_length;
+#define ICMP_HEADER_LENGTH 8
+#define DATA_LENGTH (64 - ICMP_HEADER_LENGTH)
 
 int seq = 0;
 pid_t pid;
@@ -70,10 +69,10 @@ u_short checksum(u_short *data, int length) {
 }
 
 void alarm_handler(int signal_number) {
-    int icmp_packet_length = data_length + icmp_header_length;
+    int icmp_packet_length = DATA_LENGTH + ICMP_HEADER_LENGTH;
 
     char send_buffer[BUFFER_SIZE];
-    memset(send_buffer + icmp_header_length, 0, data_length);
+    memset(send_buffer + ICMP_HEADER_LENGTH, 0, DATA_LENGTH);
 
     struct icmp *icmp_packet = (struct icmp *)send_buffer;
     icmp_packet->icmp_type = ICMP_ECHO;
@@ -125,7 +124,7 @@ int main(int argc, char **argv) {
         "PING %s (%s): %d data bytes\n",
         host->ai_canonname,
         send_ip,
-        data_length
+        DATA_LENGTH
     );
 
     alarm_handler(SIGALRM);
